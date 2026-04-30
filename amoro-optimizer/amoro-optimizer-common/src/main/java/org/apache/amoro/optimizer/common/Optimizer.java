@@ -55,16 +55,17 @@ public class Optimizer {
 
   public void startOptimizing() {
     LOG.info("Starting optimizer with configuration:{}", config);
-    executorThreads = new Thread[executors.length];
+    Thread[] threads = new Thread[executors.length];
     IntStream.range(0, executors.length)
         .forEach(
             i -> {
-              executorThreads[i] =
+              threads[i] =
                   new Thread(
                       executors[i]::start,
                       String.format("Optimizer-executor-%d", executors[i].getThreadId()));
-              executorThreads[i].start();
+              threads[i].start();
             });
+    this.executorThreads = threads;
     toucher.withTokenChangeListener(new SetTokenToExecutors()).start();
   }
 

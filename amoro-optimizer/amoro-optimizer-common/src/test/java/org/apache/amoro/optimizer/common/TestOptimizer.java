@@ -97,9 +97,9 @@ public class TestOptimizer extends OptimizerTestBase {
             TestOptimizerExecutor.TestOptimizingInput.slowSuccessInput(1, taskExecutionMs)
                 .toTask(0, 0));
 
-    // Wait long enough for the executor to poll, ack and start executing the task,
-    // but short enough that it is still in the middle of execute() when we call stop.
-    TimeUnit.MILLISECONDS.sleep(OptimizerTestHelpers.CALL_AMS_INTERVAL * 3);
+    // Wait for at least 2 full poll cycles (poll loop interval is hardcoded to 1s in
+    // OptimizerExecutor) so the executor is guaranteed to have picked up and started the task.
+    TimeUnit.SECONDS.sleep(2);
 
     long startStop = System.currentTimeMillis();
     optimizer.stopOptimizing();

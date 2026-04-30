@@ -264,9 +264,22 @@ public class OptimizerExecutor extends AbstractOptimizerOperator {
         // best-effort direct call so graceful shutdown still reports completed work to AMS.
         String token = getToken();
         if (token == null) {
-          throw new TException("Cannot complete task during shutdown: token unavailable");
+          LOG.warn(
+              "Optimizer executor[{}] skipping task[{}] completion during shutdown: token unavailable",
+              threadId,
+              optimizingTaskResult.getTaskId());
+          return;
         }
-        OptimizingClientPools.getClient(amsUrl).completeTask(token, optimizingTaskResult);
+        try {
+          OptimizingClientPools.getClient(amsUrl).completeTask(token, optimizingTaskResult);
+        } catch (Exception e) {
+          LOG.warn(
+              "Optimizer executor[{}] failed to report task[{}] completion during shutdown, result may be lost",
+              threadId,
+              optimizingTaskResult.getTaskId(),
+              e);
+          return;
+        }
       }
       LOG.info(
           "Optimizer executor[{}] completed task[{}](status: {}) to AMS {}",

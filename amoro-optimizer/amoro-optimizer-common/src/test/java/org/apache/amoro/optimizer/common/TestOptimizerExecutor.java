@@ -85,6 +85,14 @@ public class TestOptimizerExecutor extends OptimizerTestBase {
   }
 
   @Test
+  public void testCompleteTaskDuringShutdownWithNullToken() {
+    optimizerExecutor.stop();
+    OptimizingTaskResult result = new OptimizingTaskResult(new OptimizingTaskId(0, 0), 0);
+    optimizerExecutor.completeTask(TEST_AMS.getServerUrl(), result);
+    Assert.assertTrue(TEST_AMS.getOptimizerHandler().getCompletedTasks().isEmpty());
+  }
+
+  @Test
   public void testExecuteTaskFailed() throws InterruptedException, TException {
     TEST_AMS.getOptimizerHandler().authenticate(new OptimizerRegisterInfo());
     String token =
