@@ -54,4 +54,70 @@ public class TestOptimizer extends OptimizerTestBase {
     Assert.assertEquals(2, taskResults.size());
     optimizer.stopOptimizing();
   }
+
+  @Test
+  public void testGracefulShutdown() throws InterruptedException {
+    OptimizerConfig optimizerConfig =
+        OptimizerTestHelpers.buildOptimizerConfig(TEST_AMS.getServerUrl());
+    Optimizer optimizer = new Optimizer(optimizerConfig);
+    Thread optimizerThread = new Thread(optimizer::startOptimizing);
+    optimizerThread.start();
+    TimeUnit.SECONDS.sleep(1);
+
+    TEST_AMS
+        .getOptimizerHandler()
+        .offerTask(TestOptimizerExecutor.TestOptimizingInput.successInput(1).toTask(0, 0));
+    TimeUnit.MILLISECONDS.sleep(OptimizerTestHelpers.CALL_AMS_INTERVAL * 5);
+
+    optimizer.stopOptimizing();
+    optimizerThread.join(5000);
+
+    Assert.assertFalse("Optimizer thread should have terminated", optimizerThread.isAlive());
+
+    String token = optimizer.getToucher().getToken();
+    List<OptimizingTaskResult> taskResults =
+        TEST_AMS.getOptimizerHandler().getCompletedTasks().get(token);
+    Assert.assertNotNull("Task results should be reported before shutdown", taskResults);
+    Assert.assertEquals(1, taskResults.size());
+  }
+
+  @Test
+  public void testGracefulShutdownWaitsForInProgressTask() throws InterruptedException {
+    OptimizerConfig optimizerConfig =
+        OptimizerTestHelpers.buildOptimizerConfig(TEST_AMS.getServerUrl());
+    Optimizer optimizer = new Optimizer(optimizerConfig);
+    Thread optimizerThread = new Thread(optimizer::startOptimizing);
+    optimizerThread.start();
+    TimeUnit.SECONDS.sleep(1);
+
+    long taskExecutionMs = 3_000;
+    TEST_AMS
+        .getOptimizerHandler()
+        .offerTask(
+            TestOptimizerExecutor.TestOptimizingInput.slowSuccessInput(1, taskExecutionMs)
+                .toTask(0, 0));
+
+    // Wait long enough for the executor to poll, ack and start executing the task,
+    // but short enough that it is still in the middle of execute() when we call stop.
+    TimeUnit.MILLISECONDS.sleep(OptimizerTestHelpers.CALL_AMS_INTERVAL * 3);
+
+    long startStop = System.currentTimeMillis();
+    optimizer.stopOptimizing();
+    long elapsed = System.currentTimeMillis() - startStop;
+    optimizerThread.join(5_000);
+
+    Assert.assertFalse("Optimizer thread should have terminated", optimizerThread.isAlive());
+    Assert.assertTrue(
+        "stopOptimizing should block until in-progress task completes (elapsed=" + elapsed + "ms)",
+        elapsed >= 1_000);
+
+    String token = optimizer.getToucher().getToken();
+    List<OptimizingTaskResult> taskResults =
+        TEST_AMS.getOptimizerHandler().getCompletedTasks().get(token);
+    Assert.assertNotNull("Task results should be reported before shutdown", taskResults);
+    Assert.assertEquals(1, taskResults.size());
+    Assert.assertNull(
+        "In-progress task must complete successfully, not be interrupted",
+        taskResults.get(0).getErrorMessage());
+  }
 }
