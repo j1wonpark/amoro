@@ -65,6 +65,14 @@ public class SparkOptimizer extends Optimizer {
     OptimizerToucher toucher = optimizer.getToucher();
     toucher.withRegisterProperty(Resource.PROPERTY_JOB_ID, spark.sparkContext().applicationId());
 
+    Runtime.getRuntime()
+        .addShutdownHook(
+            new Thread(
+                () -> {
+                  LOG.info("Received shutdown signal, initiating graceful shutdown...");
+                  optimizer.stopOptimizing();
+                },
+                "Spark-optimizer-shutdown-hook"));
     LOG.info("Starting the spark optimizer with configuration:{}", config);
     optimizer.startOptimizing();
   }
