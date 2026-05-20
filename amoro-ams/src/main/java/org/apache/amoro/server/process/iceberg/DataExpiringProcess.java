@@ -34,12 +34,12 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
-/** Local table process for cleaning Iceberg orphan files. */
-public class OrphanFilesCleaningProcess extends TableProcess implements LocalProcess {
+/** Local table process for expiring Iceberg data. */
+public class DataExpiringProcess extends TableProcess implements LocalProcess {
 
-  private static final Logger LOG = LoggerFactory.getLogger(OrphanFilesCleaningProcess.class);
+  private static final Logger LOG = LoggerFactory.getLogger(DataExpiringProcess.class);
 
-  public OrphanFilesCleaningProcess(TableRuntime tableRuntime, ExecuteEngine engine) {
+  public DataExpiringProcess(TableRuntime tableRuntime, ExecuteEngine engine) {
     super(tableRuntime, engine);
   }
 
@@ -53,19 +53,19 @@ public class OrphanFilesCleaningProcess extends TableProcess implements LocalPro
     try {
       AmoroTable<?> amoroTable = tableRuntime.loadTable();
       TableMaintainer tableMaintainer = TableMaintainerFactory.create(amoroTable, tableRuntime);
-      tableMaintainer.cleanOrphanFiles();
+      tableMaintainer.expireData();
       tableRuntime.updateState(
           DefaultTableRuntime.CLEANUP_STATE_KEY,
-          cleanUp -> cleanUp.setLastOrphanFilesCleanTime(System.currentTimeMillis()));
+          cleanUp -> cleanUp.setLastDataExpiringTime(System.currentTimeMillis()));
     } catch (Throwable t) {
-      LOG.error("Failed to clean orphan files for table {}", tableRuntime.getTableIdentifier(), t);
+      LOG.error("unexpected expire data error of table {}", tableRuntime.getTableIdentifier(), t);
       throw new RuntimeException(t);
     }
   }
 
   @Override
   public Action getAction() {
-    return IcebergActions.CLEAN_ORPHAN;
+    return IcebergActions.EXPIRE_DATA;
   }
 
   @Override

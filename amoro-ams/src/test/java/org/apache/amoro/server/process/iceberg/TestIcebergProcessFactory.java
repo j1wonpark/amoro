@@ -21,12 +21,17 @@ package org.apache.amoro.server.process.iceberg;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 
+import org.apache.amoro.Action;
 import org.apache.amoro.IcebergActions;
 import org.apache.amoro.TableFormat;
 import org.apache.amoro.TableRuntime;
+import org.apache.amoro.config.DataExpirationConfig;
 import org.apache.amoro.config.TableConfiguration;
 import org.apache.amoro.process.LocalExecutionEngine;
 import org.apache.amoro.process.ProcessTriggerStrategy;
+import org.apache.amoro.process.RecoverProcessFailedException;
+import org.apache.amoro.process.TableProcess;
+import org.apache.amoro.process.TableProcessStore;
 import org.apache.amoro.server.table.DefaultTableRuntime;
 import org.apache.amoro.server.table.cleanup.TableRuntimeCleanupState;
 import org.junit.Assert;
@@ -44,8 +49,10 @@ public class TestIcebergProcessFactory {
   @Test
   public void testOpenAndSupportedActions() {
     assertSupportedAction("expire-snapshots", IcebergActions.EXPIRE_SNAPSHOTS, Duration.ofHours(1));
+    assertSupportedAction("clean-orphan-files", IcebergActions.CLEAN_ORPHAN, Duration.ofHours(24));
     assertSupportedAction(
-        "clean-orphan-files", IcebergActions.DELETE_ORPHANS, Duration.ofHours(24));
+        "clean-dangling-delete-files", IcebergActions.CLEAN_DANGLING_DELETE, Duration.ofHours(24));
+    assertSupportedAction("expire-data", IcebergActions.EXPIRE_DATA, Duration.ofHours(24));
   }
 
   @Test
@@ -53,7 +60,13 @@ public class TestIcebergProcessFactory {
     assertTriggerWhenDue(
         "expire-snapshots", IcebergActions.EXPIRE_SNAPSHOTS, SnapshotsExpiringProcess.class, 0);
     assertTriggerWhenDue(
-        "clean-orphan-files", IcebergActions.DELETE_ORPHANS, OrphanFilesCleaningProcess.class, 0);
+        "clean-orphan-files", IcebergActions.CLEAN_ORPHAN, OrphanFilesCleaningProcess.class, 0);
+    assertTriggerWhenDue(
+        "clean-dangling-delete-files",
+        IcebergActions.CLEAN_DANGLING_DELETE,
+        DanglingDeleteFilesCleaningProcess.class,
+        0);
+    assertTriggerWhenDue("expire-data", IcebergActions.EXPIRE_DATA, DataExpiringProcess.class, 0);
   }
 
   @Test
@@ -61,13 +74,101 @@ public class TestIcebergProcessFactory {
     assertTriggerNotDue(
         "expire-snapshots", IcebergActions.EXPIRE_SNAPSHOTS, System.currentTimeMillis());
     assertTriggerNotDue(
-        "clean-orphan-files", IcebergActions.DELETE_ORPHANS, System.currentTimeMillis());
+        "clean-orphan-files", IcebergActions.CLEAN_ORPHAN, System.currentTimeMillis());
+    assertTriggerNotDue(
+        "clean-dangling-delete-files",
+        IcebergActions.CLEAN_DANGLING_DELETE,
+        System.currentTimeMillis());
+    assertTriggerNotDue("expire-data", IcebergActions.EXPIRE_DATA, System.currentTimeMillis());
   }
 
   @Test
   public void testTriggerActionDisabled() {
     assertTriggerDisabled("expire-snapshots", IcebergActions.EXPIRE_SNAPSHOTS, false, 0);
-    assertTriggerDisabled("clean-orphan-files", IcebergActions.DELETE_ORPHANS, false, 0);
+    assertTriggerDisabled("clean-orphan-files", IcebergActions.CLEAN_ORPHAN, false, 0);
+    assertTriggerDisabled(
+        "clean-dangling-delete-files", IcebergActions.CLEAN_DANGLING_DELETE, false, 0);
+    assertTriggerDisabled("expire-data", IcebergActions.EXPIRE_DATA, false, 0);
+  }
+
+  @Test
+  public void testRecoverExpireSnapshotsProcess() {
+    assertRecover(
+        "expire-snapshots", IcebergActions.EXPIRE_SNAPSHOTS, SnapshotsExpiringProcess.class);
+  }
+
+  @Test
+  public void testRecoverOrphanFilesCleaningProcess() {
+    assertRecover(
+        "clean-orphan-files", IcebergActions.CLEAN_ORPHAN, OrphanFilesCleaningProcess.class);
+  }
+
+  @Test
+  public void testRecoverCleanDanglingDeleteProcess() {
+    assertRecover(
+        "clean-dangling-delete-files",
+        IcebergActions.CLEAN_DANGLING_DELETE,
+        DanglingDeleteFilesCleaningProcess.class);
+  }
+
+  @Test
+  public void testRecoverDataExpiringProcess() {
+    assertRecover("expire-data", IcebergActions.EXPIRE_DATA, DataExpiringProcess.class);
+  }
+
+  @Test
+  public void testRecoverUnsupportedActionThrows() {
+    IcebergProcessFactory factory = openedFactory("expire-snapshots");
+
+    LocalExecutionEngine localEngine = mock(LocalExecutionEngine.class);
+    doReturn(LocalExecutionEngine.ENGINE_NAME).when(localEngine).name();
+    factory.availableExecuteEngines(Arrays.asList(localEngine));
+
+    TableProcessStore store = mock(TableProcessStore.class);
+    doReturn(IcebergActions.REWRITE).when(store).getAction();
+
+    Assert.assertThrows(
+        RecoverProcessFailedException.class,
+        () -> factory.recover(mock(TableRuntime.class), store));
+  }
+
+  @Test
+  public void testRecoverWithoutLocalEngineThrows() {
+    IcebergProcessFactory factory = openedFactory("expire-snapshots");
+
+    TableProcessStore store = mock(TableProcessStore.class);
+    doReturn(IcebergActions.EXPIRE_SNAPSHOTS).when(store).getAction();
+
+    Assert.assertThrows(
+        RecoverProcessFailedException.class,
+        () -> factory.recover(mock(TableRuntime.class), store));
+  }
+
+  private void assertRecover(String configKey, Action action, Class<?> processClass) {
+    IcebergProcessFactory factory = openedFactory(configKey);
+
+    LocalExecutionEngine localEngine = mock(LocalExecutionEngine.class);
+    doReturn(LocalExecutionEngine.ENGINE_NAME).when(localEngine).name();
+    factory.availableExecuteEngines(Arrays.asList(localEngine));
+
+    TableProcessStore store = mock(TableProcessStore.class);
+    doReturn(action).when(store).getAction();
+
+    TableProcess process = factory.recover(mock(TableRuntime.class), store);
+
+    Assert.assertNotNull(process);
+    Assert.assertTrue(processClass.isInstance(process));
+    Assert.assertEquals(action, process.getAction());
+    Assert.assertEquals(LocalExecutionEngine.ENGINE_NAME, process.getExecutionEngine());
+  }
+
+  private IcebergProcessFactory openedFactory(String configKey) {
+    IcebergProcessFactory factory = new IcebergProcessFactory();
+    Map<String, String> properties = new HashMap<>();
+    properties.put(configKey + ".enabled", "true");
+    properties.put(configKey + ".interval", "1h");
+    factory.open(properties);
+    return factory;
   }
 
   private void assertSupportedAction(
@@ -153,6 +254,10 @@ public class TestIcebergProcessFactory {
       tableConfiguration.setExpireSnapshotEnabled(enabled);
     } else if ("clean-orphan-files".equals(configKey)) {
       tableConfiguration.setCleanOrphanEnabled(enabled);
+    } else if ("clean-dangling-delete-files".equals(configKey)) {
+      tableConfiguration.setDeleteDanglingDeleteFilesEnabled(enabled);
+    } else if ("expire-data".equals(configKey)) {
+      tableConfiguration.setExpiringDataConfig(new DataExpirationConfig().setEnabled(enabled));
     }
 
     TableRuntimeCleanupState cleanupState = new TableRuntimeCleanupState();
@@ -160,11 +265,16 @@ public class TestIcebergProcessFactory {
       cleanupState.setLastSnapshotsExpiringTime(lastTime);
     } else if ("clean-orphan-files".equals(configKey)) {
       cleanupState.setLastOrphanFilesCleanTime(lastTime);
+    } else if ("clean-dangling-delete-files".equals(configKey)) {
+      cleanupState.setLastDanglingDeleteFilesCleanTime(lastTime);
+    } else if ("expire-data".equals(configKey)) {
+      cleanupState.setLastDataExpiringTime(lastTime);
     }
 
     TableRuntime runtime = mock(TableRuntime.class);
     doReturn(tableConfiguration).when(runtime).getTableConfiguration();
     doReturn(cleanupState).when(runtime).getState(DefaultTableRuntime.CLEANUP_STATE_KEY);
+
     return runtime;
   }
 }

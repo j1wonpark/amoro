@@ -37,16 +37,19 @@ public class TableRuntimeCleanupState {
     return lastDanglingDeleteFilesCleanTime;
   }
 
-  public void setLastDanglingDeleteFilesCleanTime(long lastDanglingDeleteFilesCleanTime) {
+  public TableRuntimeCleanupState setLastDanglingDeleteFilesCleanTime(
+      long lastDanglingDeleteFilesCleanTime) {
     this.lastDanglingDeleteFilesCleanTime = lastDanglingDeleteFilesCleanTime;
+    return this;
   }
 
   public long getLastDataExpiringTime() {
     return lastDataExpiringTime;
   }
 
-  public void setLastDataExpiringTime(long lastDataExpiringTime) {
+  public TableRuntimeCleanupState setLastDataExpiringTime(long lastDataExpiringTime) {
     this.lastDataExpiringTime = lastDataExpiringTime;
+    return this;
   }
 
   public long getLastSnapshotsExpiringTime() {
