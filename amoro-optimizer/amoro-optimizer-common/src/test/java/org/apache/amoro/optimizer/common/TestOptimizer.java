@@ -66,13 +66,13 @@ public class TestOptimizer extends OptimizerTestBase {
     optimizer.stopOptimizing();
     optimizerThread.join(5000);
 
-    Assert.assertFalse("Optimizer thread should have terminated", optimizerThread.isAlive());
+    Assertions.assertFalse(optimizerThread.isAlive(), "Optimizer thread should have terminated");
 
     String token = optimizer.getToucher().getToken();
     List<OptimizingTaskResult> taskResults =
         TEST_AMS.getOptimizerHandler().getCompletedTasks().get(token);
-    Assert.assertNotNull("Task results should be reported before shutdown", taskResults);
-    Assert.assertEquals(1, taskResults.size());
+    Assertions.assertNotNull(taskResults, "Task results should be reported before shutdown");
+    Assertions.assertEquals(1, taskResults.size());
   }
 
   @Test
@@ -100,18 +100,18 @@ public class TestOptimizer extends OptimizerTestBase {
     long elapsed = System.currentTimeMillis() - startStop;
     optimizerThread.join(5_000);
 
-    Assert.assertFalse("Optimizer thread should have terminated", optimizerThread.isAlive());
-    Assert.assertTrue(
-        "stopOptimizing should block until in-progress task completes (elapsed=" + elapsed + "ms)",
-        elapsed >= 1_000);
+    Assertions.assertFalse(optimizerThread.isAlive(), "Optimizer thread should have terminated");
+    Assertions.assertTrue(
+        elapsed >= 1_000,
+        "stopOptimizing should block until in-progress task completes (elapsed=" + elapsed + "ms)");
 
     String token = optimizer.getToucher().getToken();
     List<OptimizingTaskResult> taskResults =
         TEST_AMS.getOptimizerHandler().getCompletedTasks().get(token);
-    Assert.assertNotNull("Task results should be reported before shutdown", taskResults);
-    Assert.assertEquals(1, taskResults.size());
-    Assert.assertNull(
-        "In-progress task must complete successfully, not be interrupted",
-        taskResults.get(0).getErrorMessage());
+    Assertions.assertNotNull(taskResults, "Task results should be reported before shutdown");
+    Assertions.assertEquals(1, taskResults.size());
+    Assertions.assertNull(
+        taskResults.get(0).getErrorMessage(),
+        "In-progress task must complete successfully, not be interrupted");
   }
 }
